@@ -6,6 +6,7 @@ import { NotchBar } from "@/components/notch-bar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { adminListOrders, adminUpdateOrder, amIAdmin } from "@/lib/orders.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -32,6 +33,8 @@ function AdminPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
 
   const refresh = async () => {
@@ -55,8 +58,11 @@ function AdminPage() {
   const decide = async (id: string, status: "approved" | "rejected") => {
     setBusy(true);
     try {
-      await update({ data: { id, status, note: "" } });
+      setError(null);
+      const result = await update({ data: { id, status, note: notes[id] ?? "" } });
+      if (!result.ok) { setError(result.reason); return; }
       await refresh();
+    } catch { setError("Could not update the order. Try again.");
     } finally {
       setBusy(false);
     }
@@ -107,9 +113,10 @@ function AdminPage() {
 
           {allowed && (
             <>
+              {error && <p role="alert" className="mt-5 text-sm text-destructive">{error}</p>}
               <div className="mt-8 grid gap-4 sm:grid-cols-3">
                 <Stat label="Orders" value={String(orders.length)} />
-                <Stat label="Awaiting gift card check" value={String(orders.filter((o) => o.status === "pending").length)} />
+                <Stat label="Awaiting payment verification" value={String(orders.filter((o) => o.status === "pending").length)} />
                 <Stat label="Approved revenue" value={`£${revenue.toFixed(2)}`} />
               </div>
 
@@ -151,23 +158,29 @@ function AdminPage() {
                     </dl>
 
                     {o.status === "pending" && (
-                      <div className="mt-5 flex gap-2">
-                        <button
+                      <div className="mt-5 space-y-3">
+                        {o.method !== "stripe" && <label className="block text-xs text-muted-foreground">Payment verification note
+                          <input aria-label={`Verification note for ${o.orderRef}`} value={notes[o.id] ?? ""} onChange={(event) => setNotes((previous) => ({ ...previous, [o.id]: event.target.value }))} className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground" />
+                        </label>}
+                        {o.method === "stripe" && <p className="text-xs text-muted-foreground">Awaiting Stripe confirmation. Refresh checks connected payments.</p>}
+                        <div className="flex gap-2">
+                        {o.method !== "stripe" && <Button
                           type="button"
                           disabled={busy}
                           onClick={() => decide(o.id, "approved")}
                           className="rounded-full bg-primary px-5 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50"
                         >
-                          Approve &amp; issue key
-                        </button>
-                        <button
+                          Confirm payment checked &amp; issue key
+                        </Button>}
+                        <Button
                           type="button"
                           disabled={busy}
                           onClick={() => decide(o.id, "rejected")}
                           className="rounded-full border border-border px-5 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50"
                         >
                           Reject
-                        </button>
+                        </Button>
+                        </div>
                       </div>
                     )}
                   </article>

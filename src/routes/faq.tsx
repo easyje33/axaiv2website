@@ -19,8 +19,8 @@ const faqs = [
   { q: "What is AxAI?", a: "An all-in-one homework autocompleter for Sparx, Educake, Bedrock and Century Tech, run from our Discord server." },
   { q: "How much is AXPlus?", a: "£3.50, paid once. You keep it for life — no subscription." },
   { q: "What do I get with AXPlus?", a: "5 daily uses, 3 saveable accounts and high queue priority." },
-  { q: "How can I pay?", a: "PayPal or an Xbox gift card. Bank transfer is currently unavailable." },
-  { q: "When do I get my key?", a: "PayPal orders get a key straight away. Xbox gift card orders get a key once the card has been checked." },
+  { q: "How can I pay?", a: "Stripe, PayPal or an Xbox gift card. Bank transfer is currently unavailable." },
+  { q: "When do I get my key?", a: "Your key is released only after payment is verified. PayPal transfers and Xbox gift cards require staff checks." },
   { q: "Where do I see my purchases?", a: "Create an account and open your Dashboard to see your orders, keys and plan." },
 ];
 

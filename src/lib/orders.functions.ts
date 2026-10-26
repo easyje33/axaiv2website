@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const createSchema = z.object({
   plan: z.enum(["lifetime", "monthly", "basic"]),
-  method: z.enum(["paypal", "bank", "xbox"]),
+  method: z.enum(["paypal", "bank", "xbox", "stripe"]),
   email: z.string().email().max(200),
   discord: z.string().max(80).optional().default(""),
   reference: z.string().max(200).optional().default(""),

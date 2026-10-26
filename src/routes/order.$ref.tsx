@@ -5,6 +5,8 @@ import { ArrowLeft, Copy, Loader2 } from "lucide-react";
 import { NotchBar } from "@/components/notch-bar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { lookupOrder } from "@/lib/orders.functions";
+import { PAY_DETAILS } from "@/lib/plans";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/order/$ref")({
   validateSearch: (search: Record<string, unknown>): { t: string } => ({
@@ -32,15 +34,16 @@ function OrderPage() {
   const [order, setOrder] = useState<Loaded>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const result = await fetchOrder({ data: { ref, token: t } });
-      if (active) {
-        setOrder(result);
-        setLoading(false);
-      }
+      try {
+        const result = await fetchOrder({ data: { ref, token: t } });
+        if (active) { setOrder(result); setError(null); }
+      } catch { if (active) setError("Could not refresh your order. We’ll try again shortly."); }
+      finally { if (active) setLoading(false); }
     };
     void load();
     const id = setInterval(load, 15000);
@@ -66,6 +69,7 @@ function OrderPage() {
             <ArrowLeft className="h-3.5 w-3.5" /> Back home
           </Link>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">Your order</h1>
+          {error && <p role="alert" className="mt-4 text-sm text-muted-foreground">{error}</p>}
 
           {loading && (
             <p className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
@@ -96,13 +100,13 @@ function OrderPage() {
                 <div className="rounded-3xl border border-border bg-card p-6">
                   <p className="text-xs text-muted-foreground">Redemption key</p>
                   <p className="mt-1 font-mono text-lg break-all tracking-tight">{order.key}</p>
-                  <button
+                  <Button
                     type="button"
                     onClick={copy}
                     className="mt-4 inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-medium transition-colors hover:bg-accent"
                   >
                     <Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy key"}
-                  </button>
+                  </Button>
                   <p className="mt-4 text-xs text-muted-foreground">
                     Redeem it in the Discord server with /redeem.
                   </p>
@@ -111,8 +115,11 @@ function OrderPage() {
 
               {order.status === "pending" && (
                 <div className="rounded-3xl border border-border bg-card p-6 text-sm text-muted-foreground">
-                  Your gift card is being verified. This page refreshes automatically — your key appears
+                  Your payment is awaiting verification. This page refreshes automatically — your key appears
                   here as soon as it is approved. Keep this link.
+                  {order.method === "stripe" && <Button asChild className="mt-4">
+                    <a href={`${PAY_DETAILS.stripe}?client_reference_id=${encodeURIComponent(order.orderRef)}`} target="_blank" rel="noreferrer">Pay with Stripe</a>
+                  </Button>}
                 </div>
               )}
 

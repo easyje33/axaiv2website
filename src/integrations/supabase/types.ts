@@ -27,11 +27,13 @@ export type Database = {
           order_ref: string
           payment_method: string
           payment_reference: string | null
+          payment_verified_at: string | null
           plan: string
           redemption_key: string | null
           status: string
           tier: string
           updated_at: string
+          verified_payment_id: string | null
         }
         Insert: {
           access_token: string
@@ -45,11 +47,13 @@ export type Database = {
           order_ref: string
           payment_method: string
           payment_reference?: string | null
+          payment_verified_at?: string | null
           plan: string
           redemption_key?: string | null
           status?: string
           tier: string
           updated_at?: string
+          verified_payment_id?: string | null
         }
         Update: {
           access_token?: string
@@ -63,11 +67,13 @@ export type Database = {
           order_ref?: string
           payment_method?: string
           payment_reference?: string | null
+          payment_verified_at?: string | null
           plan?: string
           redemption_key?: string | null
           status?: string
           tier?: string
           updated_at?: string
+          verified_payment_id?: string | null
         }
         Relationships: []
       }
@@ -124,6 +130,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      fulfill_verified_order: {
+        Args: {
+          p_id: string
+          p_keys: string[]
+          p_note?: string
+          p_payment_id: string
+        }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

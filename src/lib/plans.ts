@@ -1,5 +1,5 @@
 export type PlanId = "lifetime" | "monthly" | "basic";
-export type PaymentMethod = "paypal" | "bank" | "xbox";
+export type PaymentMethod = "paypal" | "bank" | "xbox" | "stripe";
 
 export const PLANS: Record<
   PlanId,
@@ -34,7 +34,12 @@ export const PAYMENT_METHODS: Record<
 > = {
   paypal: {
     name: "PayPal",
-    blurb: "Send the payment as Friends & Family, then paste your PayPal transaction ID.",
+    blurb: "Pay with PayPal, then submit your transaction ID for staff verification.",
+    available: true,
+  },
+  stripe: {
+    name: "Card / Stripe",
+    blurb: "Create your order, then pay through its linked Stripe checkout. Your key requires verified payment.",
     available: true,
   },
   bank: {
@@ -51,6 +56,7 @@ export const PAYMENT_METHODS: Record<
 
 export const PAY_DETAILS = {
   paypal: "sikenukenike@gmail.com",
+  stripe: "https://buy.stripe.com/14AdR9geb7Fk0gN6AvfIs0n",
 };
 
 export function isPlanId(value: unknown): value is PlanId {

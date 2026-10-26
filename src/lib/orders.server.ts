@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PLANS, type PaymentMethod, type PlanId } from "./plans";
 import { PRO_KEYS, BASIC_KEYS } from "./key-pool.server";
+import { initialPaymentStatus } from "./payment-verification";
 
 export type PublicOrder = {
   orderRef: string;
@@ -52,12 +53,12 @@ export async function issueOrder(input: {
     return { ok: false, reason: "Bank transfer is currently unavailable. Use PayPal or an Xbox gift card." };
   }
   const isFree = input.plan === "basic";
-  const needsReview = !isFree && input.method === "xbox";
+  const needsReview = !isFree;
 
   if (!isFree && input.method === "xbox" && input.giftcard.trim().length < 5) {
     return { ok: false, reason: "Enter the full Xbox gift card code." };
   }
-  if (!isFree && input.method !== "xbox" && input.reference.trim().length < 4) {
+  if (!isFree && input.method !== "xbox" && input.method !== "stripe" && input.reference.trim().length < 4) {
     return { ok: false, reason: "Enter your payment reference or transaction ID." };
   }
 
@@ -77,13 +78,13 @@ export async function issueOrder(input: {
     discord: input.discord.trim() || null,
     payment_method: isFree ? "free" : input.method,
     payment_reference: input.reference.trim() || null,
-    giftcard_code: needsReview ? input.giftcard.trim() : null,
-    status: needsReview ? "pending" : "approved",
+    giftcard_code: input.method === "xbox" && needsReview ? input.giftcard.trim().toUpperCase() : null,
+    status: initialPaymentStatus(input.plan),
     redemption_key: key,
   };
 
   const { data, error } = await db.from("orders").insert(row).select().single();
-  if (error || !data) return { ok: false, reason: "Could not create the order. Try again." };
+  if (error || !data) return { ok: false, reason: error?.message.includes("already submitted") ? "That payment reference or gift card has already been submitted." : "Could not create the order. Try again." };
 
   return {
     ok: true,
@@ -103,20 +104,26 @@ export async function issueOrder(input: {
 
 export async function readOrder(ref: string, token: string): Promise<PublicOrder | null> {
   const db = await admin();
-  const { data } = await db
+  let { data } = await db
     .from("orders")
     .select("*")
     .eq("order_ref", ref)
     .eq("access_token", token)
     .maybeSingle();
   if (!data) return null;
+  if (data.status === "pending" && data.payment_method === "stripe") {
+    const { syncStripeOrder } = await import("./stripe.server");
+    try { await syncStripeOrder(data); } catch { /* Keep unverified orders pending; never grant access on provider failure. */ }
+    const refreshed = await db.from("orders").select("*").eq("id", data.id).maybeSingle();
+    if (refreshed.data) data = refreshed.data;
+  }
   return {
     orderRef: data.order_ref,
     plan: data.plan as PlanId,
     planName: PLANS[data.plan as PlanId]?.name ?? data.plan,
     method: data.payment_method as PaymentMethod,
     status: data.status as PublicOrder["status"],
-    key: data.redemption_key,
+    key: data.status === "approved" ? data.redemption_key : null,
     createdAt: data.created_at,
     adminNote: data.admin_note,
   };
@@ -129,6 +136,11 @@ export async function assertAdmin(supabase: SupabaseClient, userId: string) {
 
 export async function listOrders() {
   const db = await admin();
+  if (process.env["STRIPE_SECRET_KEY"]) {
+    const { data: pending } = await db.from("orders").select("*").eq("payment_method", "stripe").eq("status", "pending").limit(20);
+    const { syncStripeOrder } = await import("./stripe.server");
+    await Promise.allSettled((pending ?? []).map(syncStripeOrder));
+  }
   const { data } = await db.from("orders").select("*").order("created_at", { ascending: false }).limit(500);
   return (data ?? []).map((o) => ({
     id: o.id as string,
@@ -152,11 +164,16 @@ export async function updateOrder(input: { id: string; status: "approved" | "rej
   const db = await admin();
   const { data: existing } = await db.from("orders").select("*").eq("id", input.id).maybeSingle();
   if (!existing) return { ok: false as const, reason: "Order not found." };
-
-  let key: string | null = existing.redemption_key;
-  if (input.status === "approved" && !key) {
-    key = await nextFreeKey(existing.tier as "pro" | "basic");
-    if (!key) return { ok: false as const, reason: "No keys left in this pool." };
+  if (existing.status !== "pending") return { ok: false as const, reason: "This order has already been processed." };
+  if (input.status === "approved") {
+    if (existing.payment_method === "stripe") return { ok: false as const, reason: "Stripe orders must be verified with Stripe; manual approval is disabled." };
+    if (input.note.trim().length < 10) return { ok: false as const, reason: "Record how you checked the payment before approving." };
+    const paymentId = existing.payment_method === "xbox" ? `xbox:${existing.giftcard_code?.replace(/-/g, "").toUpperCase()}` : `${existing.payment_method}:${existing.payment_reference?.toLowerCase()}`;
+    const { data, error } = await db.rpc("fulfill_verified_order", {
+      p_id: input.id, p_payment_id: paymentId,
+      p_keys: existing.tier === "pro" ? PRO_KEYS : BASIC_KEYS, p_note: input.note,
+    });
+    return !error && data === true ? { ok: true as const } : { ok: false as const, reason: "No unused key is available, or this payment was already used." };
   }
 
   const { error } = await db
@@ -164,9 +181,8 @@ export async function updateOrder(input: { id: string; status: "approved" | "rej
     .update({
       status: input.status,
       admin_note: input.note || null,
-      redemption_key: input.status === "approved" ? key : existing.redemption_key,
     })
-    .eq("id", input.id);
+    .eq("id", input.id).eq("status", "pending");
   if (error) return { ok: false as const, reason: error.message };
   return { ok: true as const };
 }
@@ -179,6 +195,11 @@ const RANKS: Record<string, { rank: string; weight: number }> = {
 
 export async function listMyOrders(email: string) {
   const db = await admin();
+  if (process.env["STRIPE_SECRET_KEY"]) {
+    const { data: pending } = await db.from("orders").select("*").eq("email", email.trim().toLowerCase()).eq("status", "pending").eq("payment_method", "stripe").limit(20);
+    const { syncStripeOrder } = await import("./stripe.server");
+    await Promise.allSettled((pending ?? []).map(syncStripeOrder));
+  }
   const { data } = await db
     .from("orders")
     .select("*")
@@ -194,7 +215,7 @@ export async function listMyOrders(email: string) {
     method: o.payment_method as string,
     amount: Number(o.amount_gbp),
     status: o.status as string,
-    key: (o.redemption_key as string | null) ?? null,
+    key: o.status === "approved" ? (o.redemption_key as string | null) ?? null : null,
     note: (o.admin_note as string | null) ?? null,
     createdAt: o.created_at as string,
   }));

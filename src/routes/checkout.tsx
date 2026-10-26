@@ -6,6 +6,7 @@ import { NotchBar } from "@/components/notch-bar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PLANS, PAYMENT_METHODS, PAY_DETAILS, isPlanId, type PaymentMethod, type PlanId } from "@/lib/plans";
 import { createOrder } from "@/lib/orders.functions";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/checkout")({
   validateSearch: (search: Record<string, unknown>): { plan: PlanId } => ({
@@ -17,10 +18,10 @@ export const Route = createFileRoute("/checkout")({
       {
         name: "description",
         content:
-          "Pay for AXPlus with PayPal, bank transfer or an Xbox gift card, or claim AX Basic free, and get your redemption key.",
+          "Order AXPlus with Stripe, PayPal or an Xbox gift card. Paid orders require payment verification before key delivery.",
       },
       { property: "og:title", content: "Checkout — AxAI Plans" },
-      { property: "og:description", content: "PayPal, bank transfer or Xbox gift card. Instant key on approval." },
+      { property: "og:description", content: "Stripe, PayPal or Xbox gift card. Keys are released after payment verification." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -100,9 +101,9 @@ function Checkout() {
               {!isFree && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">Payment method</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {(Object.keys(PAYMENT_METHODS) as PaymentMethod[]).map((id) => (
-                      <button
+                      <Button
                         key={id}
                         type="button"
                         disabled={!PAYMENT_METHODS[id].available}
@@ -117,7 +118,7 @@ function Checkout() {
                         {!PAYMENT_METHODS[id].available && (
                           <span className="mt-1 block text-[10px] tracking-wide uppercase">Unavailable</span>
                         )}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">{PAYMENT_METHODS[method].blurb}</p>
@@ -140,7 +141,26 @@ function Checkout() {
                       </a>
                       <p className="mt-3 text-xs text-muted-foreground">
                         PayPal opens in a new tab. After paying, paste your PayPal transaction ID below to unlock
-                        your key.
+                        submit your payment for verification.
+                      </p>
+                    </div>
+                  )}
+                  {method === "stripe" && (
+                    <div className="mt-3 rounded-2xl border border-border p-4">
+                      <p className="font-mono text-xs break-all">
+                        Pay {details.price} by card through Stripe
+                      </p>
+                      <a
+                        href={PAY_DETAILS.stripe}
+                        onClick={(event) => { event.preventDefault(); setError("Enter your email and submit your order first; your order page has the linked Stripe payment button."); }}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-block rounded-full bg-primary px-5 py-2.5 text-xs font-medium text-primary-foreground transition-transform active:scale-95"
+                      >
+                        Pay {details.price} with card
+                      </a>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Submit your order first, then use its Stripe payment button so the payment includes your order ID.
                       </p>
                     </div>
                   )}
@@ -170,7 +190,7 @@ function Checkout() {
                 />
               </label>
 
-              {!isFree && method !== "xbox" && (
+              {!isFree && method !== "xbox" && method !== "stripe" && (
                 <label className="block text-xs font-medium text-muted-foreground">
                   Payment reference / transaction ID
                   <input
@@ -198,19 +218,19 @@ function Checkout() {
 
               {error && <p className="text-sm text-muted-foreground">{error}</p>}
 
-              <button
+              <Button
                 type="submit"
                 disabled={busy}
                 className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-transform active:scale-95 disabled:opacity-50"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isFree ? "Claim my free key" : method === "xbox" ? "Submit for verification" : "Complete order"}
-              </button>
+                {isFree ? "Claim my free key" : method === "stripe" ? "Create order & pay" : "Submit for verification"}
+              </Button>
 
               <p className="text-xs text-muted-foreground">
-                {isFree || method !== "xbox"
+                {isFree
                   ? "Your key is issued instantly once the order is placed."
-                  : "Gift card orders are held until we verify the code, then your key unlocks on the order page."}
+                  : "Paid orders stay pending until payment is verified. A submitted reference alone never unlocks a key."}
               </p>
             </form>
           </section>
